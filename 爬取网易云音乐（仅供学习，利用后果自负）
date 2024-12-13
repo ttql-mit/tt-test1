@@ -1,0 +1,108 @@
+import re
+import os
+import requests
+import random
+import time
+from urllib.parse import urljoin
+
+
+def get_random_user_agent():
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15'
+    ]
+    return random.choice(user_agents)
+
+
+def create_directory(path):
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as e:
+        print(f"Error creating directory {path}: {e}")
+        raise
+
+
+def download_music(session, music_url, title):
+    filename_safe = re.sub(r'[<>:"/\\|?*]', '_', title)  # 处理文件名中的非法字符
+    file_path = os.path.join(MUSIC_DIR, f"{filename_safe}.mp3")
+
+    try:
+        if os.path.exists(file_path):
+            print(f"Skipping {title} - already exists")
+            return
+
+        music_content = session.get(music_url, timeout=30)
+        music_content.raise_for_status()
+
+        with open(file_path, 'wb') as f:
+            f.write(music_content.content)
+        print(f"Downloaded: {title}")
+
+    except requests.RequestException as e:
+        print(f"Error downloading {title}: {e}")
+    except Exception as e:
+        print(f"Unexpected error while downloading {title}: {e}")
+
+
+def get_song_list(session, url):
+    try:
+        response = session.get(url, timeout=30)
+        response.raise_for_status()
+        # 更新正则表达式以匹配网易云音乐的实际HTML结构
+        songs = re.findall(r'<a href="/song\?id=(\d+)".*?>(.*?)</a>', response.text)
+        return songs
+    except requests.RequestException as e:
+        print(f"Error fetching song list: {e}")
+        return []
+
+
+def main():
+    # 设置基础配置
+    BASE_URL = 'https://music.163.com'
+    global MUSIC_DIR
+
+    # 设置指定的保存路径
+    MUSIC_DIR = os.path.join('D:', 'the massage of pachong')
+
+    try:
+        # 创建文件夹
+        create_directory(MUSIC_DIR)
+        print(f"保存目录: {MUSIC_DIR}")
+
+        # 创建会话并设置headers
+        session = requests.Session()
+        session.headers.update({
+            'user-agent': get_random_user_agent(),
+            'Referer': BASE_URL,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+        })
+
+        # 获取歌曲列表
+        playlist_url = urljoin(BASE_URL, '/discover/toplist')
+        print(f"正在获取歌曲列表: {playlist_url}")
+        songs = get_song_list(session, playlist_url)
+
+        if not songs:
+            print("未找到歌曲!")
+            return
+
+        print(f"找到 {len(songs)} 首歌曲")
+
+        # 下载音乐
+        for index, (song_id, title) in enumerate(songs, 1):
+            print(f"\n[{index}/{len(songs)}] 正在下载: {title}")
+            music_url = f'https://music.163.com/song/media/outer/url?id={song_id}.mp3'
+            download_music(session, music_url, title)
+            delay = random.uniform(1, 3)
+            print(f"等待 {delay:.2f} 秒...")
+            time.sleep(delay)
+
+    except Exception as e:
+        print(f"发生错误: {e}")
+    else:
+        print(f"\n下载完成! 文件保存在: {MUSIC_DIR}")
+
+
+if __name__ == "__main__":
+    main()
